@@ -84,3 +84,144 @@ ros2 topic pub -r 10 /cmd_vel geometry_msgs/msg/Twist "{linear: {x: 0.0}, angula
 ros2 topic pub --once /cmd_vel geometry_msgs/msg/Twist "{linear: {x: 0.0}, angular: {z: 0.0}}"
 ```
 
+# part 3: ROS2 Keyboard Teleoperation Node
+
+A custom ROS2 node that reads keyboard input and publishes velocity commands to control a TurtleBot3 robot in the Gazebo simulator.
+
+---
+
+## Overview
+
+This package implements a keyboard teleoperation node for ROS2, inspired by the [`teleop_twist_keyboard`](https://github.com/ros2/teleop_twist_keyboard) package. It maps WASD and arrow keys to `geometry_msgs/Twist` messages published on the `/cmd_vel` topic, with an emergency stop triggered by the spacebar.
+
+---
+
+## Features
+
+- WASD and arrow key control (forward, backward, rotate left/right)
+- Publishes `Twist` messages to `/cmd_vel` at 10 Hz
+- Emergency stop on `SPACE` — instantly zeroes all velocity
+- Release-to-stop behaviour — robot stops when no key is held
+- Clean shutdown on `Q` or `Ctrl+C`
+- Tested with TurtleBot3 Burger in Gazebo simulator
+- Fully commented source code
+
+---
+
+## Key Bindings
+
+| Key | Action |
+|-----|--------|
+| `W` / `↑` | Move forward |
+| `S` / `↓` | Move backward |
+| `A` / `←` | Rotate left |
+| `D` / `→` | Rotate right |
+| `SPACE` | Emergency stop |
+| `Q` | Quit node |
+
+## Installation
+
+```bash
+# Navigate to your ROS2 workspace source folder
+cd ~/ros2_ws/src
+
+# Create the package (if starting fresh)
+ros2 pkg create --build-type ament_python keyboard_teleop
+
+# Copy keyboard_teleop_node.py into keyboard_teleop/keyboard_teleop/
+
+# Build
+cd ~/ros2_ws
+colcon build --packages-select keyboard_teleop
+source install/setup.bash
+```
+
+---
+
+## Usage
+
+### 1. Launch TurtleBot3 in Gazebo
+
+```bash
+export TURTLEBOT3_MODEL=burger
+ros2 launch turtlebot3_gazebo turtlebot3_world.launch.py
+```
+
+### 2. Run the teleoperation node (separate terminal)
+
+```bash
+source ~/ros2_ws/install/setup.bash
+ros2 run keyboard_teleop keyboard_teleop
+```
+
+### 3. Verify it's working (optional, separate terminal)
+
+```bash
+# Watch velocity commands being published
+ros2 topic echo /cmd_vel
+
+# Watch robot odometry changing
+ros2 topic echo /odom
+```
+
+> **Important:** The terminal running the teleop node must be active/focused for key input to register.
+
+---
+
+## How It Works
+
+### Node Architecture
+
+```
+Keyboard Input (background thread)
+        │
+        ▼
+  get_key() — raw terminal read (termios)
+        │
+        ▼
+  KEY_BINDINGS dict — maps key → (linear_x, angular_z)
+        │
+        ▼
+  Velocity state (_linear_x, _angular_z)
+        │
+        ▼
+  Timer callback (10 Hz) — builds and publishes Twist msg
+        │
+        ▼
+  /cmd_vel topic → TurtleBot3
+```
+
+### Key Concepts
+
+**Twist message** — the standard ROS2 velocity command type. This node uses:
+- `linear.x` — forward/backward speed in m/s
+- `angular.z` — rotation speed in rad/s
+
+All other fields stay at `0.0` since TurtleBot3 is a differential-drive (2D) robot.
+
+**Threading** — keyboard reading runs in a daemon thread so it never blocks the ROS2 spin loop. The timer publishes velocity independently at 10 Hz.
+
+**Emergency stop** — pressing `SPACE` publishes a zero `Twist` immediately, bypassing the timer, for an instant stop.
+
+**Release-to-stop** — if no key is detected within 0.1 seconds, velocity is zeroed automatically. This prevents the robot from continuing if the terminal loses focus.
+
+---
+
+## Velocity Settings
+
+Tuned for TurtleBot3 Burger:
+
+| Parameter | Value |
+|-----------|-------|
+| Linear speed | 0.22 m/s |
+| Angular speed | 1.5 rad/s |
+
+These can be adjusted at the top of `keyboard_teleop_node.py`.
+
+---
+
+## Verification
+
+Robot movement was verified by monitoring `/odom` and `/cmd_vel` topics. Position and orientation values in `/odom` updated in response to keyboard input, and `/cmd_vel` showed correct `linear.x` and `angular.z` values matching the expected velocity constants.
+
+[Still working on it] 
